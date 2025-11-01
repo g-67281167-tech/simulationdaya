@@ -1,0 +1,319 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { RotateCcw, Play, Trash2 } from 'lucide-react';
+
+const ForceDiagramSimulator = () => {
+  const canvasRef = useRef(null);
+  const [forces, setForces] = useState([]);
+  const [drawing, setDrawing] = useState(false);
+  const [startPoint, setStartPoint] = useState(null);
+  const [currentPoint, setCurrentPoint] = useState(null);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [animationStep, setAnimationStep] = useState(0);
+  const [arrangedForces, setArrangedForces] = useState([]);
+
+  const colors = ['#ef4444', '#3b82f6', '#10b981'];
+
+  useEffect(() => {
+    drawCanvas();
+  }, [forces, drawing, startPoint, currentPoint, isAnimating, animationStep, arrangedForces]);
+
+  const drawCanvas = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Draw grid
+    ctx.strokeStyle = '#e5e7eb';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < canvas.width; i += 40) {
+      ctx.beginPath();
+      ctx.moveTo(i, 0);
+      ctx.lineTo(i, canvas.height);
+      ctx.stroke();
+    }
+    for (let i = 0; i < canvas.height; i += 40) {
+      ctx.beginPath();
+      ctx.moveTo(0, i);
+      ctx.lineTo(canvas.width, i);
+      ctx.stroke();
+    }
+
+    // Draw original forces (on left side)
+    if (!isAnimating) {
+      forces.forEach((force, idx) => {
+        drawArrow(ctx, force.start.x, force.start.y, force.end.x, force.end.y, colors[idx], 3);
+        
+        // Label
+        const magnitude = Math.sqrt(Math.pow(force.end.x - force.start.x, 2) + Math.pow(force.end.y - force.start.y, 2));
+        ctx.fillStyle = colors[idx];
+        ctx.font = 'bold 14px sans-serif';
+        ctx.fillText(`F${idx + 1} (${Math.round(magnitude)}N)`, force.start.x + 5, force.start.y - 5);
+      });
+    }
+
+    // Draw animation
+    if (isAnimating && arrangedForces.length > 0) {
+      const progress = Math.min(animationStep / 60, 1);
+      
+      arrangedForces.forEach((force, idx) => {
+        if (idx === 0) {
+          // First force moves to center
+          const currentX = forces[0].start.x + (force.start.x - forces[0].start.x) * progress;
+          const currentY = forces[0].start.y + (force.start.y - forces[0].start.y) * progress;
+          const endX = currentX + (forces[0].end.x - forces[0].start.x);
+          const endY = currentY + (forces[0].end.y - forces[0].start.y);
+          
+          drawArrow(ctx, currentX, currentY, endX, endY, colors[0], 3);
+          
+          if (progress === 1) {
+            ctx.fillStyle = colors[0];
+            ctx.font = 'bold 14px sans-serif';
+            ctx.fillText(`F1`, force.start.x + 5, force.start.y - 5);
+          }
+        } else if (idx <= Math.floor(animationStep / 30)) {
+          // Subsequent forces appear after previous ones
+          const originalForce = forces[idx];
+          const localProgress = Math.min((animationStep - idx * 30) / 30, 1);
+          
+          const currentStartX = originalForce.start.x + (force.start.x - originalForce.start.x) * localProgress;
+          const currentStartY = originalForce.start.y + (force.start.y - originalForce.start.y) * localProgress;
+          const currentEndX = originalForce.end.x + (force.end.x - originalForce.end.x) * localProgress;
+          const currentEndY = originalForce.end.y + (force.end.y - originalForce.end.y) * localProgress;
+          
+          drawArrow(ctx, currentStartX, currentStartY, currentEndX, currentEndY, colors[idx], 3);
+          
+          if (localProgress === 1) {
+            ctx.fillStyle = colors[idx];
+            ctx.font = 'bold 14px sans-serif';
+            ctx.fillText(`F${idx + 1}`, force.start.x + 5, force.start.y - 5);
+          }
+        }
+      });
+
+      // Draw resultant force at the end
+      if (animationStep > arrangedForces.length * 30 + 30) {
+        const resultantProgress = Math.min((animationStep - arrangedForces.length * 30 - 30) / 30, 1);
+        const lastForce = arrangedForces[arrangedForces.length - 1];
+        const firstStart = arrangedForces[0].start;
+        
+        const currentEndX = firstStart.x + (lastForce.end.x - firstStart.x) * resultantProgress;
+        const currentEndY = firstStart.y + (lastForce.end.y - firstStart.y) * resultantProgress;
+        
+        drawArrow(ctx, firstStart.x, firstStart.y, currentEndX, currentEndY, '#9333ea', 4, true);
+        
+        if (resultantProgress === 1) {
+          ctx.fillStyle = '#9333ea';
+          ctx.font = 'bold 16px sans-serif';
+          const midX = (firstStart.x + lastForce.end.x) / 2;
+          const midY = (firstStart.y + lastForce.end.y) / 2;
+          ctx.fillText('R (Resultant)', midX + 10, midY - 10);
+        }
+      }
+    }
+
+    // Draw current force being drawn
+    if (drawing && startPoint && currentPoint) {
+      drawArrow(ctx, startPoint.x, startPoint.y, currentPoint.x, currentPoint.y, colors[forces.length], 3);
+    }
+  };
+
+  const drawArrow = (ctx, x1, y1, x2, y2, color, width = 2, dashed = false) => {
+    const headlen = 15;
+    const angle = Math.atan2(y2 - y1, x2 - x1);
+
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = width;
+
+    if (dashed) {
+      ctx.setLineDash([10, 5]);
+    } else {
+      ctx.setLineDash([]);
+    }
+
+    // Draw line
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+
+    // Draw arrowhead
+    ctx.beginPath();
+    ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - headlen * Math.cos(angle - Math.PI / 6), y2 - headlen * Math.sin(angle - Math.PI / 6));
+    ctx.lineTo(x2 - headlen * Math.cos(angle + Math.PI / 6), y2 - headlen * Math.sin(angle + Math.PI / 6));
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.setLineDash([]);
+  };
+
+  const handleMouseDown = (e) => {
+    if (forces.length >= 3 || isAnimating) return;
+    
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    setDrawing(true);
+    setStartPoint({ x, y });
+    setCurrentPoint({ x, y });
+  };
+
+  const handleMouseMove = (e) => {
+    if (!drawing) return;
+
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+
+    setCurrentPoint({ x, y });
+  };
+
+  const handleMouseUp = () => {
+    if (!drawing || !startPoint || !currentPoint) return;
+
+    const distance = Math.sqrt(
+      Math.pow(currentPoint.x - startPoint.x, 2) + 
+      Math.pow(currentPoint.y - startPoint.y, 2)
+    );
+
+    if (distance > 20) {
+      setForces([...forces, { start: startPoint, end: currentPoint }]);
+    }
+
+    setDrawing(false);
+    setStartPoint(null);
+    setCurrentPoint(null);
+  };
+
+  const arrangeForces = () => {
+    if (forces.length < 2) return;
+
+    setIsAnimating(true);
+    setAnimationStep(0);
+
+    // Calculate arranged forces (tip-to-tail)
+    const arranged = [];
+    const centerX = 400;
+    const centerY = 300;
+
+    forces.forEach((force, idx) => {
+      if (idx === 0) {
+        arranged.push({
+          start: { x: centerX, y: centerY },
+          end: { 
+            x: centerX + (force.end.x - force.start.x), 
+            y: centerY + (force.end.y - force.start.y) 
+          }
+        });
+      } else {
+        const prevEnd = arranged[idx - 1].end;
+        arranged.push({
+          start: { x: prevEnd.x, y: prevEnd.y },
+          end: { 
+            x: prevEnd.x + (force.end.x - force.start.x), 
+            y: prevEnd.y + (force.end.y - force.start.y) 
+          }
+        });
+      }
+    });
+
+    setArrangedForces(arranged);
+  };
+
+  useEffect(() => {
+    if (isAnimating) {
+      const maxSteps = arrangedForces.length * 30 + 60;
+      if (animationStep < maxSteps) {
+        const timer = setTimeout(() => {
+          setAnimationStep(animationStep + 1);
+        }, 16);
+        return () => clearTimeout(timer);
+      } else {
+        setIsAnimating(false);
+      }
+    }
+  }, [isAnimating, animationStep, arrangedForces]);
+
+  const reset = () => {
+    setForces([]);
+    setIsAnimating(false);
+    setAnimationStep(0);
+    setArrangedForces([]);
+  };
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
+      <div className="bg-white rounded-xl shadow-2xl p-6 max-w-4xl w-full">
+        <h1 className="text-3xl font-bold text-center mb-2 text-indigo-900">
+          Simulator Force Diagram
+        </h1>
+        <p className="text-center text-gray-600 mb-6">
+          Lukis {forces.length}/3 daya dengan klik dan seret. Kemudian tekan "Susun Daya".
+        </p>
+
+        <div className="mb-4 flex gap-3 justify-center">
+          <button
+            onClick={arrangeForces}
+            disabled={forces.length < 2 || isAnimating}
+            className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all"
+          >
+            <Play size={20} />
+            Susun Daya
+          </button>
+          <button
+            onClick={reset}
+            disabled={isAnimating}
+            className="flex items-center gap-2 px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-all"
+          >
+            <Trash2 size={20} />
+            Reset
+          </button>
+        </div>
+
+        <div className="border-4 border-indigo-200 rounded-lg overflow-hidden">
+          <canvas
+            ref={canvasRef}
+            width={800}
+            height={600}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+            className="cursor-crosshair bg-white"
+          />
+        </div>
+
+        <div className="mt-4 grid grid-cols-3 gap-3">
+          {[0, 1, 2].map((idx) => (
+            <div
+              key={idx}
+              className={`p-3 rounded-lg border-2 ${
+                forces.length > idx
+                  ? 'border-green-500 bg-green-50'
+                  : 'border-gray-300 bg-gray-50'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <div
+                  className="w-4 h-4 rounded-full"
+                  style={{ backgroundColor: colors[idx] }}
+                />
+                <span className="font-semibold">
+                  {forces.length > idx ? `F${idx + 1} ✓` : `F${idx + 1}`}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default ForceDiagramSimulator;
